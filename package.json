@@ -1,0 +1,57 @@
+{
+  "name": "parallel-chat",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "app": "electron .",
+    "dist": "electron-builder --mac --dir",
+    "dmg": "electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "description": "Claude を複数の独立したチャットで並列に動かす Mac アプリ",
+  "version": "0.1.0",
+  "main": "electron/main.js",
+  "author": "sato0608",
+  "license": "MIT",
+  "build": {
+    "appId": "local.parallel-chat",
+    "productName": "Parallel Chat",
+    "files": [
+      "electron/**",
+      "server.js",
+      "public/**",
+      "package.json",
+      "node_modules/marked/lib/marked.umd.js",
+      "node_modules/marked/package.json",
+      "node_modules/dompurify/dist/purify.js",
+      "node_modules/dompurify/package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "sign": false
+    }
+  }
+}

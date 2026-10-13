@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parallel Chat</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --line: #e2e0da; --text: #1f1e1b; --muted: #77746c;
+    --accent: #c96442; --user: #efece4; --danger: #b3382c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1a18; --panel: #242321; --line: #3a3835; --text: #ece9e2; --muted: #98948a;
+      --accent: #e08a68; --user: #302e2b; --danger: #e5776b; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    -webkit-app-region: drag; }
+  body.mac-app header { padding-left: 84px; }
+  header button { -webkit-app-region: no-drag; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .sp { flex: 1; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 5px 12px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  #panes { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; overflow-x: auto; }
+  .pane { flex: 1 1 0; min-width: 320px; display: flex; flex-direction: column; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; }
+  .pane.drop::after { content: "画像をここにドロップ"; position: absolute; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 12px;
+    color: var(--accent); font-weight: 600; pointer-events: none; }
+  .pane-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+  .pane.busy .dot { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .title { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-weight: 600;
+    padding: 2px 4px; border-radius: 6px; }
+  .title:focus { outline: 1px solid var(--accent); }
+  .icon { padding: 2px 8px; font-size: 13px; color: var(--muted); }
+  .pane-sub { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .pane-sub select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+  .pane-sub .folder { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 2px 8px; font-size: 12px; color: var(--muted); }
+  .pane-sub .folder.set { color: var(--text); border-color: var(--accent); }
+  .pane-sub .unfolder { padding: 2px 6px; font-size: 12px; color: var(--muted); }
+  .pane-sub .unfolder[hidden] { display: none; }
+  .pane-sub :disabled { opacity: .5; cursor: default; }
+  .log { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { word-break: break-word; }
+  .msg.user { background: var(--user); padding: 8px 12px; border-radius: 12px; align-self: flex-end; max-width: 90%; white-space: pre-wrap; }
+  .msg.assistant.error { color: var(--danger); }
+  .msg .note { color: var(--muted); font-size: 12px; }
+  .msg .imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .msg .imgs img { max-width: 180px; max-height: 160px; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; display: block; }
+  .msg.user .txt:empty { display: none; }
+  /* Markdown */
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p { margin: .5em 0; }
+  .md h1, .md h2, .md h3, .md h4 { margin: 1em 0 .4em; line-height: 1.3; }
+  .md h1 { font-size: 1.35em; } .md h2 { font-size: 1.2em; } .md h3 { font-size: 1.07em; } .md h4 { font-size: 1em; }
+  .md ul, .md ol { margin: .4em 0; padding-left: 1.5em; }
+  .md li { margin: .15em 0; }
+  .md blockquote { margin: .6em 0; padding: .1em .9em; border-left: 3px solid var(--line); color: var(--muted); }
+  .md a { color: var(--accent); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+  .md pre { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    overflow-x: auto; margin: .6em 0; }
+  .md pre code { background: none; padding: 0; font-size: 13px; line-height: 1.5; }
+  .md code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .md table { border-collapse: collapse; margin: .6em 0; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
+  .md th { background: var(--bg); }
+  .copy { position: absolute; top: 4px; right: 4px; font-size: 11px; padding: 1px 7px; opacity: 0; transition: opacity .15s; }
+  .md pre:hover .copy { opacity: 1; }
+  .empty { color: var(--muted); text-align: center; margin: auto; font-size: 13px; }
+  .composer { border-top: 1px solid var(--line); padding: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .chips:empty { display: none; }
+  .chip { position: relative; }
+  .chip img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+  .chip button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; padding: 0;
+    line-height: 1; font-size: 11px; background: var(--text); color: var(--panel); border: 0; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  textarea { flex: 1; resize: none; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; max-height: 160px; }
+  textarea:focus { outline: 1px solid var(--accent); }
+  .attach { padding: 7px 10px; }
+  .warn { color: var(--danger); font-size: 12px; margin-bottom: 6px; }
+  .warn:empty { display: none; }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; place-items: center; z-index: 10; cursor: zoom-out; }
+  #lightbox.on { display: grid; }
+  #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parallel Chat</h1>
+  <span class="sp"></span>
+  <button id="add">＋ チャットを追加</button>
+</header>
+<main id="panes"></main>
+<div id="lightbox"><img alt=""></div>
+
+<script src="/vendor/marked.js"></script>
+<script src="/vendor/purify.js"></script>
+<script>
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024, MAX_IMAGES = 6;
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+if (/Electron/.test(navigator.userAgent)) document.body.classList.add('mac-app');
+
+const panesEl = document.getElementById('panes');
+const views = new Map();
+
+const api = (path, body) => fetch(path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
+}).then((r) => r.json());
+
+function esc(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Markdown → サニタイズ済み HTML。リンクは外部ブラウザで開く。
+marked.setOptions({ gfm: true, breaks: true });
+DOMPurify.addHook('afterSanitizeAttributes', (n) => {
+  if (n.tagName === 'A') { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
+});
+function renderMd(text) {
+  return DOMPurify.sanitize(marked.parse(text || ''));
+}
+function setMd(el, text) {
+  el.classList.add('md');
+  el.innerHTML = renderMd(text);
+  el.querySelectorAll('pre').forEach((pre) => {
+    if (pre.querySelector('.copy')) return;
+    const b = document.createElement('button');
+    b.className = 'copy'; b.type = 'button'; b.textContent = 'コピー';
+    b.onclick = async () => {
+      await navigator.clipboard.writeText(pre.querySelector('code')?.innerText ?? pre.innerText);
+      b.textContent = '✓'; setTimeout(() => (b.textContent = 'コピー'), 1200);
+    };
+    pre.appendChild(b);
+  });
+}
+
+function scrollDown(v, force) {
+  const nearBottom = v.log.scrollHeight - v.log.scrollTop - v.log.clientHeight < 80;
+  if (nearBottom || force) v.log.scrollTop = v.log.scrollHeight;
+}
+
+function addMsg(v, m) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + m.role + (m.error ? ' error' : '');
+  if (m.role === 'user') {
+    if (m.images?.length) {
+      const g = document.createElement('div'); g.className = 'imgs';
+      for (const f of m.images) g.appendChild(imgEl(`/uploads/${f}`));
+      el.appendChild(g);
+    }
+    const t = document.createElement('div'); t.className = 'txt'; t.textContent = m.text || '';
+    el.appendChild(t);
+  } else {
+    setMd(el, m.text || '');
+    if (m.error) el.insertAdjacentHTML('beforeend', `<p>${esc(m.error)}</p>`);
+    if (m.stopped) el.insertAdjacentHTML('beforeend', '<div class="note">（停止しました）</div>');
+  }
+  v.log.appendChild(el);
+  return el;
+}
+
+function imgEl(src) {
+  const i = document.createElement('img');
+  i.src = src; i.alt = '添付画像';
+  i.onclick = () => openLightbox(src);
+  return i;
+}
+const lightbox = document.getElementById('lightbox');
+function openLightbox(src) { lightbox.querySelector('img').src = src; lightbox.classList.add('on'); }
+lightbox.onclick = () => lightbox.classList.remove('on');
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') lightbox.classList.remove('on'); });
+
+function setBusy(v, busy) {
+  v.busy = busy;
+  v.root.classList.toggle('busy', busy);
+  v.send.textContent = busy ? '停止' : '送信';
+  for (const el of [v.model, v.folderBtn, v.unfolder]) if (el) el.disabled = busy;
+}
+
+const toDataUrl = (file) => new Promise((res, rej) => {
+  const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+});
+
+async function addFiles(v, files) {
+  v.warn.textContent = '';
+  for (const f of files) {
+    if (!IMAGE_TYPES.includes(f.type)) { v.warn.textContent = `画像（PNG / JPEG / GIF / WebP）のみ添付できます: ${f.name || ''}`; continue; }
+    if (f.size > MAX_IMAGE_BYTES) { v.warn.textContent = `5MB を超える画像は添付できません: ${f.name || '画像'}`; continue; }
+    if (v.images.length >= MAX_IMAGES) { v.warn.textContent = `添付は 1 回に ${MAX_IMAGES} 枚までです`; break; }
+    const url = await toDataUrl(f);
+    v.images.push({ mediaType: f.type, data: url.split(',')[1], preview: url });
+  }
+  renderChips(v);
+}
+function renderChips(v) {
+  v.chips.innerHTML = '';
+  v.images.forEach((im, i) => {
+    const c = document.createElement('div'); c.className = 'chip';
+    const img = document.createElement('img'); img.src = im.preview;
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = '削除';
+    x.onclick = () => { v.images.splice(i, 1); renderChips(v); };
+    c.append(img, x); v.chips.appendChild(c);
+  });
+}
+
+function build(p) {
+  const root = document.createElement('section');
+  root.className = 'pane';
+  root.innerHTML = `
+    <div class="pane-head">
+      <span class="dot"></span>
+      <input class="title" spellcheck="false">
+      <button class="icon reset" title="会話をリセット">リセット</button>
+      <button class="icon del" title="このチャットを閉じる">✕</button>
+    </div>
+    <div class="pane-sub">
+      <select class="model" title="モデル">
+        <option value="">モデル: 既定</option>
+        <option value="opus">Opus</option>
+        <option value="sonnet">Sonnet</option>
+        <option value="haiku">Haiku</option>
+      </select>
+      <button type="button" class="folder" title="読ませるフォルダを選択（読み取り専用）">📁 フォルダ未選択</button>
+      <button type="button" class="unfolder icon" title="フォルダの選択を解除" hidden>✕</button>
+    </div>
+    <div class="log"></div>
+    <form class="composer">
+      <div class="warn"></div>
+      <div class="chips"></div>
+      <div class="row">
+        <button type="button" class="attach icon" title="画像を添付">📎</button>
+        <textarea rows="2" placeholder="メッセージ（Enter 送信 / Shift+Enter 改行）" title="画像は貼り付け・ドロップでも添付できます"></textarea>
+        <button type="submit" class="primary send">送信</button>
+      </div>
+      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+    </form>`;
+  const v = {
+    id: p.id, root, busy: false, images: [],
+    log: root.querySelector('.log'),
+    input: root.querySelector('textarea'),
+    send: root.querySelector('.send'),
+    chips: root.querySelector('.chips'),
+    warn: root.querySelector('.warn'),
+  };
+  v.folder = p.folder || null;
+  v.model = root.querySelector('.model');
+  v.folderBtn = root.querySelector('.folder');
+  v.unfolder = root.querySelector('.unfolder');
+  v.model.value = p.model || '';
+  const paintFolder = () => {
+    v.folderBtn.textContent = v.folder ? `📁 ${v.folder.split('/').filter(Boolean).pop() || v.folder}` : '📁 フォルダ未選択';
+    v.folderBtn.title = v.folder ? `${v.folder}\n（読み取り専用 / クリックで変更）` : '読ませるフォルダを選択（読み取り専用）';
+    v.folderBtn.classList.toggle('set', !!v.folder);
+    v.unfolder.hidden = !v.folder;
+  };
+  paintFolder();
+  v.model.onchange = async () => {
+    const r = await api('/api/settings', { paneId: p.id, model: v.model.value });
+    if (r.error) alert(r.error);
+  };
+  const setFolder = async (folder) => {
+    if (v.busy) return;
+    if (v.log.querySelector('.msg') && !confirm('フォルダを変更すると、このチャットの会話はリセットされます。続けますか？')) return;
+    const r = await api('/api/settings', { paneId: p.id, folder });
+    if (r.error) return alert(r.error);
+    v.folder = r.folder;
+    paintFolder();
+    if (r.reset) { v.log.innerHTML = ''; showEmpty(v); }
+  };
+  v.folderBtn.onclick = async () => {
+    if (v.busy) return;
+    // Mac アプリではネイティブのフォルダ選択、ブラウザ版ではパスを入力
+    const picked = window.pcNative
+      ? await window.pcNative.pickFolder()
+      : prompt('読ませるフォルダの絶対パスを入力（例: /Users/あなた/Documents/memo）', v.folder || '');
+    if (picked) setFolder(picked);
+  };
+  v.unfolder.onclick = () => setFolder(null);
+
+  const fileInput = root.querySelector('input[type=file]');
+  const title = root.querySelector('.title');
+  title.value = p.title;
+  title.addEventListener('change', () => api('/api/rename', { paneId: p.id, title: title.value }));
+
+  root.querySelector('.attach').onclick = () => fileInput.click();
+  fileInput.onchange = () => { addFiles(v, [...fileInput.files]); fileInput.value = ''; };
+  v.input.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); addFiles(v, files); }
+  });
+  let depth = 0;
+  root.addEventListener('dragenter', (e) => { if (e.dataTransfer?.types.includes('Files')) { depth++; root.classList.add('drop'); } });
+  root.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; root.classList.remove('drop'); } });
+  root.addEventListener('dragover', (e) => e.preventDefault());
+  root.addEventListener('drop', (e) => {
+    e.preventDefault(); depth = 0; root.classList.remove('drop');
+    addFiles(v, [...(e.dataTransfer?.files || [])]);
+  });
+
+  root.querySelector('.reset').onclick = async () => {
+    if (v.busy || !confirm('このチャットの会話をリセットしますか？')) return;
+    await api('/api/reset', { paneId: p.id });
+    v.log.innerHTML = ''; showEmpty(v);
+  };
+  root.querySelector('.del').onclick = async () => {
+    if (!confirm('このチャットを閉じますか？（履歴も削除されます）')) return;
+    await api('/api/delete', { paneId: p.id });
+    root.remove(); views.delete(p.id);
+  };
+  root.querySelector('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (v.busy) return api('/api/stop', { paneId: p.id });
+    submit(v);
+  });
+  v.input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!v.busy) submit(v); }
+  });
+  v.input.addEventListener('input', () => {
+    v.input.style.height = 'auto';
+    v.input.style.height = Math.min(v.input.scrollHeight, 160) + 'px';
+  });
+
+  for (const m of p.messages) addMsg(v, m);
+  if (!p.messages.length) showEmpty(v);
+  panesEl.appendChild(root);
+  views.set(p.id, v);
+  v.log.scrollTop = v.log.scrollHeight;
+  if (p.busy) setBusy(v, true);
+  return v;
+}
+
+function showEmpty(v) {
+  const e = document.createElement('div');
+  e.className = 'empty';
+  e.textContent = 'ここに質問や相談を入力してください';
+  v.log.appendChild(e);
+}
+
+async function submit(v) {
+  const text = v.input.value.trim();
+  const images = v.images.slice();
+  if (!text && !images.length) return;
+  v.input.value = ''; v.input.style.height = 'auto';
+  v.images = []; renderChips(v); v.warn.textContent = '';
+  v.log.querySelector('.empty')?.remove();
+
+  // ユーザーメッセージ（画像はプレビューを即時表示）
+  const userEl = addMsg(v, { role: 'user', text });
+  if (images.length) {
+    const g = document.createElement('div'); g.className = 'imgs';
+    images.forEach((im) => g.appendChild(imgEl(im.preview)));
+    userEl.prepend(g);
+  }
+  const el = document.createElement('div');
+  el.className = 'msg assistant md'; el.textContent = '…';
+  v.log.appendChild(el);
+  scrollDown(v, true);
+  setBusy(v, true);
+
+  let acc = '', failed = null, pending = false;
+  const paint = () => { // 描画は 1 フレームに 1 回にまとめる
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; setMd(el, acc); scrollDown(v); });
+  };
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paneId: v.id, text, images: images.map(({ mediaType, data }) => ({ mediaType, data })) }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === 'delta') { acc += ev.text; paint(); }
+        else if (ev.type === 'error') failed = ev.message;
+      }
+    }
+  } catch (e) {
+    failed = e.message;
+  }
+  await new Promise((r) => requestAnimationFrame(r));
+  if (failed) {
+    el.classList.add('error');
+    setMd(el, acc);
+    el.insertAdjacentHTML('beforeend', `<p>${esc(failed)}</p>`);
+  } else if (!acc) {
+    el.textContent = '（応答なし）';
+  } else {
+    setMd(el, acc);
+  }
+  setBusy(v, false);
+  v.input.focus();
+}
+
+document.getElementById('add').onclick = async () => {
+  const p = await api('/api/panes', {});
+  p.messages = p.messages || [];
+  build(p).input.focus();
+};
+
+(async () => {
+  const { panes } = await fetch('/api/state').then((r) => r.json());
+  panes.forEach(build);
+})();
+</script>
+</body>
+</html>
